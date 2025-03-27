@@ -1,0 +1,107 @@
+import requests
+import pandas as pd
+import nltk
+import spacy
+from nltk.corpus import stopwords
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+
+# Load NLP model
+nltk.download('stopwords')
+spacy_model = spacy.load("en_core_web_sm")
+stop_words = set(stopwords.words('english'))
+
+# Google API Key (Replace with actual key, or leave blank to use dummy data)
+GOOGLE_PLACES_API_KEY = ""
+
+### ✅ 1. Convert Address to Latitude & Longitude (If API is Used)
+def get_coordinates(address):
+    if not GOOGLE_PLACES_API_KEY:
+        return None, None  # Skip API if no key
+
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={address}&key={GOOGLE_PLACES_API_KEY}"
+    response = requests.get(url)
+    data = response.json()
+
+    if data['status'] == 'OK':
+        lat = data['results'][0]['geometry']['location']['lat']
+        lng = data['results'][0]['geometry']['location']['lng']
+        return lat, lng
+    return None, None
+
+### ✅ 2. Fetch Nearby Businesses (If API is Used)
+def get_nearby_businesses(address, radius=2000):
+    lat, lng = get_coordinates(address)
+    if lat is None or lng is None or not GOOGLE_PLACES_API_KEY:
+        print("⚠ Using Dummy Business Data (No API Available)")
+        return get_dummy_businesses()  # Fallback to dummy data
+
+    places_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&radius={radius}&type=store&key={GOOGLE_PLACES_API_KEY}"
+    response = requests.get(places_url)
+    data = response.json()
+
+    business_list = []
+    if data['status'] == 'OK':
+        for place in data['results']:
+            business_list.append(place['name'])
+    
+    return business_list if business_list else get_dummy_businesses()
+
+### ✅ 3. Dummy Business Data (Used if API is Unavailable)
+def get_dummy_businesses():
+    return [
+        "Organic Grocery Store", "Mobile Phone Repair", "Luxury Fashion Store", 
+        "Local Bakery", "Hardware & Tools Shop", "Coffee Cafe", "Electronics Showroom",
+        "Home Furniture Store", "Car Repair Garage", "Handmade Crafts Shop",
+        "Pet Supplies Store", "Bookstore", "Fast Food Restaurant", "Yoga Studio",
+        "Medical Pharmacy", "Computer Repair Service"
+    ]
+
+### ✅ 4. Clean and Process Business Names
+def clean_text(text):
+    if not text:
+        return "unknown_business"
+    
+    doc = spacy_model(text.lower())
+    tokens = [token.lemma_ for token in doc if token.is_alpha]  # Keep all words
+    return " ".join(tokens) if tokens else "unknown_business"
+
+### ✅ 5. Cluster Businesses Using K-Means
+def cluster_businesses(business_list, num_clusters=4):
+    if not business_list:
+        print("No valid business data to process!")
+        return pd.DataFrame({"Business": [], "Cluster": []})
+    
+    vectorizer = TfidfVectorizer()
+    X = vectorizer.fit_transform(business_list)
+    
+    kmeans = KMeans(n_clusters=min(num_clusters, len(business_list)), random_state=42)
+    clusters = kmeans.fit_predict(X)
+    
+    return pd.DataFrame({'Business': business_list, 'Cluster': clusters})
+
+### ✅ 6. Suggest a New Business (Based on Missing Categories)
+def suggest_business(existing_businesses):
+    common_businesses = {
+        "Grocery Store", "Electronics Shop", "Bakery", "Cafe", "Clothing Store",
+        "Pharmacy", "Bookstore", "Fitness Center", "Salon", "Pet Store",
+        "Repair Service", "Car Service", "Fast Food", "Jewelry Store"
+    }
+    
+    existing_types = set(clean_text(biz).split()[0] for biz in existing_businesses)
+    missing_businesses = common_businesses - existing_types  # Find missing businesses
+    
+    if missing_businesses:
+        return f"Suggested Business Idea: {missing_businesses.pop()}"
+    return "All common businesses are present. Try a unique niche!"
+
+# ✅ Example Usage:
+address = "MG Road, Bangalore"  # Modify with any location
+businesses = get_nearby_businesses(address)
+cleaned_businesses = [clean_text(biz) for biz in businesses]
+business_clusters = cluster_businesses(cleaned_businesses)
+
+suggested_business = suggest_business(cleaned_businesses)
+
+print("📍 Local Business Clusters:\n", business_clusters)
+print("💡", suggested_business)
