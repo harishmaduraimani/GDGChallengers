@@ -1,0 +1,151 @@
+import google.generativeai as genai
+import requests
+import pandas as pd
+import nltk
+import spacy
+from nltk.corpus import stopwords
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+
+# Load NLP model
+nltk.download('stopwords')
+spacy_model = spacy.load("en_core_web_sm")
+stop_words = set(stopwords.words('english'))
+
+# Google API Key (Replace with actual key, or leave blank to use dummy data)
+GOOGLE_PLACES_API_KEY = "AIzaSyDVBRXyguhpgQW-ohHU7cwmelX8a1gbKcQ"
+
+def configure_gemini(api_key):
+    """Configure Gemini AI with API Key"""
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel("gemini-1.5-pro-latest")
+
+def get_coordinates(address):
+    if not GOOGLE_PLACES_API_KEY:
+        return None, None  # Skip API if no key
+
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={address}&key={GOOGLE_PLACES_API_KEY}"
+    response = requests.get(url)
+    data = response.json()
+
+    if data['status'] == 'OK':
+        lat = data['results'][0]['geometry']['location']['lat']
+        lng = data['results'][0]['geometry']['location']['lng']
+        return lat, lng
+    return None, None
+
+def get_nearby_businesses(address, radius=2000):
+    lat, lng = get_coordinates(address)
+    if lat is None or lng is None or not GOOGLE_PLACES_API_KEY:
+        print("⚠ Using Dummy Business Data (No API Available)")
+        return get_dummy_businesses()
+
+    places_url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&radius={radius}&type=store&key={GOOGLE_PLACES_API_KEY}"
+    response = requests.get(places_url)
+    data = response.json()
+
+    business_list = []
+    if data['status'] == 'OK':
+        for place in data['results']:
+            business_list.append(place['name'])
+    
+    return business_list if business_list else get_dummy_businesses()
+
+def get_dummy_businesses():
+    return [
+        "Organic Grocery Store", "Mobile Phone Repair", "Luxury Fashion Store", 
+        "Local Bakery", "Hardware & Tools Shop", "Coffee Cafe", "Electronics Showroom",
+        "Home Furniture Store", "Car Repair Garage", "Handmade Crafts Shop",
+        "Pet Supplies Store", "Bookstore", "Fast Food Restaurant", "Yoga Studio",
+        "Medical Pharmacy", "Computer Repair Service"
+    ]
+
+def clean_text(text):
+    if not text:
+        return "unknown_business"
+    
+    doc = spacy_model(text.lower())
+    tokens = [token.lemma_ for token in doc if token.is_alpha]  # Keep all words
+    return " ".join(tokens) if tokens else "unknown_business"
+
+def cluster_businesses(business_list, num_clusters=4):
+    if not business_list:
+        print("No valid business data to process!")
+        return pd.DataFrame({"Business": [], "Cluster": []})
+    
+    vectorizer = TfidfVectorizer()
+    X = vectorizer.fit_transform(business_list)
+    
+    kmeans = KMeans(n_clusters=min(num_clusters, len(business_list)), random_state=42)
+    clusters = kmeans.fit_predict(X)
+    
+    return pd.DataFrame({'Business': business_list, 'Cluster': clusters})
+
+def suggest_business(existing_businesses):
+    common_businesses = {
+        "Grocery Store", "Electronics Shop", "Bakery", "Cafe", "Clothing Store",
+        "Pharmacy", "Bookstore", "Fitness Center", "Salon", "Pet Store",
+        "Repair Service", "Car Service", "Fast Food", "Jewelry Store"
+    }
+    
+    existing_types = set(clean_text(biz).split()[0] for biz in existing_businesses)
+    missing_businesses = common_businesses - existing_types  # Find missing businesses
+    
+    if missing_businesses:
+        return f"Suggested Business Idea: {missing_businesses.pop()}"
+    return "All common businesses are present. Try a unique niche!"
+
+def get_financial_advice(model, user_data):
+    """Generate financial advice based on user input"""
+    prompt = f"""
+    Analyze the user's financial details and suggest a budgeting plan, savings strategy, and business opportunities:
+    
+    Income: {user_data['income']} 
+    Savings: {user_data['savings']} 
+    Loans: {user_data['loans']} 
+    Credit Cards: {user_data['credit_cards']} 
+    EMIs: {user_data['emis']} 
+    Monthly Expenses: {user_data['monthly_expenses']} 
+    
+    Financial Goals: {user_data['financial_goals']}
+    Business Interest: {user_data['business_interest']}
+    Location: {user_data['location']}
+    
+    Provide a structured financial plan including:
+    1. Monthly Budget Breakdown
+    2. Savings and Investment Strategies
+    3. Loan and EMI Repayment Plan
+    4. Business Ideas Suitable for the User’s Location
+    """
+    response = model.generate_content(prompt)
+    return response.text
+
+def main():
+    """Main function to collect user data and provide financial & business advice"""
+    api_key = "YOUR_GOOGLE_AI_API_KEY"  # Replace with your actual API key
+    model = configure_gemini(api_key)
+    
+    user_data = {
+        "income": input("Enter your monthly income (INR): "),
+        "savings": input("Enter your total savings (INR): "),
+        "loans": input("Enter your total loan amount (INR): "),
+        "credit_cards": input("Enter your credit card debts (INR): "),
+        "emis": input("Enter your total EMIs (INR): "),
+        "monthly_expenses": input("Enter your average monthly expenses (INR): "),
+        "financial_goals": input("Enter your financial goals (short-term/long-term): "),
+        "business_interest": input("Are you interested in starting an online or offline business? "),
+        "location": input("Enter your location (City, State): ")
+    }
+    
+    businesses = get_nearby_businesses(user_data['location'])
+    cleaned_businesses = [clean_text(biz) for biz in businesses]
+    suggested_business = suggest_business(cleaned_businesses)
+    
+    advice = get_financial_advice(model, user_data)
+    print("\n💡 AI Financial Advice:\n")
+    print(advice)
+    print("\n🏪 Suggested Local Business:\n")
+    print(suggested_business)
+
+if __name__ == "__main__":
+    main()
