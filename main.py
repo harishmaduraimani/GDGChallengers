@@ -59,18 +59,49 @@ def get_nearby_businesses(location_name, keyword="shop", radius=2000):
     return results['results'], lat, lng
 
 # --- Folium Heatmap ---
-def plot_heatmap(businesses, lat, lng):
+# --- Folium Heatmap with Rating-based Color Change ---
+# --- Folium Heatmap with Rating-based Color Change and Popup Info ---
+# --- Folium Heatmap with Circle of Radius and Rating-based Color Change ---
+def plot_heatmap(businesses, lat, lng, radius=2000):
     m = folium.Map(location=[lat, lng], zoom_start=13, control_scale=True)
+
+    # Add a circle with a specified radius around the central point
+    folium.Circle(
+        location=[lat, lng],  # Center of the circle (latitude and longitude)
+        radius=radius,        # Radius in meters (default 2000 meters = 2 km)
+        color='blue',         # Circle border color
+        fill=True,            # Whether the circle should be filled
+        fill_color='blue',    # Fill color for the circle
+        fill_opacity=0.3      # Transparency of the fill
+    ).add_to(m)
+
+    # Define rating to color mapping
+    def rating_to_color(rating):
+        if rating >= 4.5:
+            return 'green'  # High rating (green)
+        elif rating >= 3.0:
+            return 'yellow'  # Moderate rating (yellow)
+        else:
+            return 'red'  # Low rating (red)
+    
     for biz in businesses:
         loc = biz['geometry']['location']
+        name = biz.get('name', 'Unknown')
+        rating = biz.get('rating', 'N/A')  # Default to 'N/A' if no rating is available
+        
+        # Create a marker with a popup that shows the name and rating
         folium.CircleMarker(
             location=[loc['lat'], loc['lng']],
             radius=5,
-            color='blue',
+            color=rating_to_color(rating),
             fill=True,
-            fill_color='blue'
-        ).add_to(m)
+            fill_color=rating_to_color(rating)
+        ).add_to(m).add_child(
+            folium.Popup(f"<b>{name}</b><br>Rating: {rating}", max_width=300)
+        )
+    
     return m
+
 
 # --- Demand vs Risk Donut Chart ---
 def plot_donut_chart():
@@ -151,6 +182,8 @@ if 'submitted' in locals() and submitted:
         st.session_state.show_chat_button = True
 
 # --- Business Idea + Summary Cards ---
+# --- Business Idea + Summary Cards ---
+# --- Business Idea + Summary Cards ---
 if st.session_state.business_idea:
     st.subheader("📌 Suggested Business Idea")
 
@@ -190,17 +223,27 @@ if st.session_state.business_idea:
                 margin: 8px 0;
                 font-weight: 500;
             }
+            .considerations-card {
+                background-color: #ffffff;
+                padding: 18px;
+                border-radius: 15px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+                font-size: 16px;
+                margin-top: 20px;
+            }
         </style>
     """, unsafe_allow_html=True)
 
+    # Use columns for side-by-side layout
     col1, col2 = st.columns([2, 1])
+
     with col1:
         st.markdown(f"""
         <div class="business-card">
             <h5>💡 Buzzisss Suggestion</h5>
             <p style="font-size: 16px;">{idea_text}</p>
         </div>
-        """, unsafe_allow_html=True)
+        """ , unsafe_allow_html=True)
 
     with col2:
         st.markdown(f"""
@@ -211,6 +254,21 @@ if st.session_state.business_idea:
                 <li>💰 <strong>Investment:</strong> {investment}</li>
                 <li>📈 <strong>Expected Profit:</strong> {profit}</li>
             </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Important Considerations - Displayed beside key metrics
+        st.markdown("""
+        <div class="considerations-card">
+            <h6>💡 Important Considerations</h6>
+            <ul>
+                <li>📊 <strong>Market Research:</strong> Conduct thorough market research in your local area.</li>
+                <li>📋 <strong>Business Plan:</strong> Develop a detailed business plan outlining your target market, pricing strategy, marketing plan, and financial projections.</li>
+                <li>⚖️ <strong>Legal and Regulatory Requirements:</strong> Obtain necessary licenses and permits to operate your business legally.</li>
+                <li>📣 <strong>Marketing and Promotion:</strong> Invest in effective marketing strategies to reach your target customers.</li>
+                <li>💵 <strong>Financial Management:</strong> Keep track of your income and expenses and manage your finances carefully.</li>
+            </ul>
+            <p style="font-size: 14px;">These considerations are essential for ensuring that your business is legally compliant and financially successful.</p>
         </div>
         """, unsafe_allow_html=True)
 
